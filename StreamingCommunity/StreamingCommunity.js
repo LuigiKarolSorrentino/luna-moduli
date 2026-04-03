@@ -1,6 +1,6 @@
 // ================================================================
 //  MODULO EDUCATIVO — StreamingCommunity per Sora / Luna (iOS)
-//  Autore  : Luigi  |  Versione: 1.0.3
+//  Autore  : Luigi  |  Versione: 1.0.4
 //  Fix     : searchBaseUrl punta all'API JSON, non alla pagina HTML
 //            L'API /api/search?q= ritorna JSON direttamente
 // ================================================================
