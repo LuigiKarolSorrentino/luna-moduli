@@ -1,42 +1,18 @@
 // ================================================================
 //  MODULO EDUCATIVO — StreamingCommunity per Sora / Luna (iOS)
-//  Autore  : Luigi
-//  Versione: 1.0.0
-//  Scopo   : Dimostrare il funzionamento dei moduli Sora/Luna:
-//            parsing HTML, JSON embedded (Inertia.js), regex, fetch
-// ================================================================
-//
-//  COME FUNZIONA UN MODULO SORA (sintesi):
-//  ┌──────────────────────────────────────────────────────────┐
-//  │  Sora scarica l'HTML di un URL e lo passa alla funzione  │
-//  │  JS corrispondente. Il JS analizza l'HTML e restituisce  │
-//  │  i dati in un formato JSON prestabilito.                 │
-//  └──────────────────────────────────────────────────────────┘
-//
-//  Le 4 funzioni obbligatorie (asyncJS: true → possono usare await/fetch):
-//  1. searchResults(html)   → [{title, image, href}]
-//  2. extractDetails(html)  → [{description, aliases, airdate}]
-//  3. extractEpisodes(html) → [{href, number}]
-//  4. extractStreamUrl(html)→ "url_stringa"
-//
-//  NOTA: Aggiorna BASE_URL con il dominio attivo del sito.
-//        Il dominio di StreamingCommunity cambia periodicamente.
+//  Autore  : Luigi  |  Versione: 1.0.3
+//  Fix     : searchBaseUrl punta all'API JSON, non alla pagina HTML
+//            L'API /api/search?q= ritorna JSON direttamente
 // ================================================================
 
-
-// ── COSTANTI ────────────────────────────────────────────────────
-const BASE_URL = "https://streamingcommunity.pink"; // ← aggiorna qui
+// ↓↓↓ AGGIORNA IL DOMINIO QUI SE CAMBIA ↓↓↓
+const BASE_URL = "https://streamingcommunityz.pink";
 const CDN_URL  = "https://cdn.streamingcommunity.pink/images";
+// ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 
-// ── UTILITÀ INTERNE ─────────────────────────────────────────────
+// ── UTILITÀ ─────────────────────────────────────────────────────
 
-/**
- * decodeHTML
- * Converte le entità HTML in caratteri normali.
- * Necessario perché i valori negli attributi HTML sono encodati.
- * Esempio: "&amp;" → "&"  |  "&#39;" → "'"  |  "&lt;" → "<"
- */
 function decodeHTML(str) {
     if (!str) return "";
     return str
@@ -50,47 +26,23 @@ function decodeHTML(str) {
 
 /**
  * extractInertiaData
- * StreamingCommunity è costruito con Laravel + Inertia.js + Vue.
- * Inertia inserisce TUTTI i dati della pagina come JSON nell'attributo
- * data-page del tag <div id="app">. Questo evita richieste API separate.
- *
- * Struttura HTML tipica:
- *   <div id="app" data-page="{&quot;component&quot;:&quot;Titles/...&quot;,...}">
- *
- * Struttura JSON estratto (semplificata):
- *   {
- *     "component": "Titles/Index",
- *     "props": {
- *       "titles": { "data": [{id, name, slug, images, ...}] },
- *       "title":  { id, name, plot, release_date, type, ... }
- *     }
- *   }
+ * Usato per extractDetails ed extractEpisodes.
+ * Quelle pagine usano Inertia.js: i dati sono nel data-page
+ * del <div id="app">.
+ * La ricerca invece usa direttamente l'API JSON.
  */
 function extractInertiaData(html) {
-    // Cerca il div#app e cattura il valore di data-page
     const match = html.match(/id="app"[^>]*data-page="([^"]+)"/);
     if (!match) return null;
-
     try {
-        // 1. decodeHTML: converte entità HTML (es. &quot; → ")
-        // 2. JSON.parse: trasforma la stringa in un oggetto JS
         return JSON.parse(decodeHTML(match[1]));
     } catch (e) {
-        // Se il parsing fallisce (JSON malformato) restituiamo null
         return null;
     }
 }
 
-/**
- * buildPosterUrl
- * Costruisce l'URL completo dell'immagine poster da un array images[].
- * StreamingCommunity memorizza le immagini sul proprio CDN
- * con il path: CDN_URL/{filename}
- * Il campo "type" distingue: "poster", "backdrop", "logo", ecc.
- */
 function buildPosterUrl(images) {
     if (!images || images.length === 0) return "";
-    // Preferiamo il poster verticale; fallback sulla prima immagine disponibile
     const poster = images.find(img => img.type === "poster") || images[0];
     return poster ? `${CDN_URL}/${poster.filename}` : "";
 }
@@ -98,247 +50,195 @@ function buildPosterUrl(images) {
 
 // ================================================================
 //  FUNZIONE 1 — searchResults(html)
-// ================================================================
-//  Viene chiamata quando l'utente cerca un titolo.
-//  Sora costruisce l'URL: searchBaseUrl (con %s = query utente)
-//  es. "https://streamingcommunity.foo/search?q=inception"
-//  scarica l'HTML e lo passa qui.
 //
-//  Output atteso: Array di oggetti { title, image, href }
+//  searchBaseUrl nel JSON punta a:
+//    BASE_URL/api/search?q=%s
+//  Questa URL ritorna JSON puro (non HTML!), quindi il parametro
+//  "html" contiene in realtà testo JSON.
+//
+//  Struttura risposta API:
+//  { "data": [ {id, name, slug, type, images: [{type, filename}]} ] }
 // ================================================================
 async function searchResults(html) {
     const results = [];
 
-    // ── METODO PRINCIPALE: dati Inertia.js ──────────────────────
-    const pageData = extractInertiaData(html);
+    try {
+        // "html" è in realtà JSON text perché puntiamo all'API
+        const data = JSON.parse(html);
 
-    if (pageData?.props?.titles) {
-        // I titoli sono in props.titles.data[] (paginazione Laravel)
-        // oppure direttamente in props.titles[] (versioni più vecchie)
-        const titlesArray = Array.isArray(pageData.props.titles)
-            ? pageData.props.titles
-            : (pageData.props.titles.data || []);
+        // La risposta può avere i titoli in data.data o direttamente in data
+        const titles = data.data || data.titles || data || [];
 
-        titlesArray.forEach(title => {
-            const name  = title.name || title.original_name || "";
-            const id    = title.id;
-            const slug  = title.slug || "";
-
-            if (!name || !id) return; // salta voci incomplete
-
+        (Array.isArray(titles) ? titles : []).forEach(t => {
+            if (!t.name || !t.id) return;
             results.push({
-                title: name,
-                image: buildPosterUrl(title.images),
-                // URL canonical del titolo sul sito
-                href:  `${BASE_URL}/titles/${id}-${slug}`
+                title: t.name,
+                image: buildPosterUrl(t.images),
+                href:  `${BASE_URL}/titles/${t.id}-${t.slug || ""}`
             });
         });
+
+    } catch (e) {
+        // Se non è JSON (es. ritorna HTML) proviamo il parsing Inertia
+        try {
+            const pageData = extractInertiaData(html);
+            if (pageData?.props?.titles) {
+                const arr = Array.isArray(pageData.props.titles)
+                    ? pageData.props.titles
+                    : (pageData.props.titles.data || []);
+
+                arr.forEach(t => {
+                    if (!t.name || !t.id) return;
+                    results.push({
+                        title: t.name,
+                        image: buildPosterUrl(t.images),
+                        href:  `${BASE_URL}/titles/${t.id}-${t.slug || ""}`
+                    });
+                });
+            }
+        } catch (_) {}
     }
 
-    // ── FALLBACK: regex sull'HTML (per versioni senza Inertia) ───
-    // Utile se il sito aggiorna la propria struttura
-    if (results.length === 0) {
-        /*
-         * Pattern HTML cercato:
-         *   <a href="/titles/123-inception" ...>
-         *     <img src="https://cdn.../poster.jpg" ...>
-         *     <span class="title-name">Inception</span>
-         *   </a>
-         */
-        const cardRegex =
-            /href="(\/titles\/[^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]*)"[^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/g;
-        let m;
-        while ((m = cardRegex.exec(html)) !== null) {
-            results.push({
-                href:  BASE_URL + m[1],
-                image: m[2],
-                title: decodeHTML(m[3].trim())
-            });
-        }
-    }
-
-    return JSON.stringify(results); // ← prima era solo: return results;
+    return JSON.stringify(results);
 }
 
 
 // ================================================================
 //  FUNZIONE 2 — extractDetails(html)
-// ================================================================
-//  Chiamata sulla pagina del singolo titolo: /titles/{id}-{slug}
-//  Deve restituire informazioni descrittive sul contenuto.
-//
-//  Output atteso: Array con un oggetto { description, aliases, airdate }
-//  (Sora si aspetta un array anche se contiene un solo elemento)
+//  Pagina titolo: usa Inertia.js → data-page attribute
+//  Output: JSON.stringify([{description, aliases, airdate}])
 // ================================================================
 async function extractDetails(html) {
     const details = [];
 
-    // ── METODO PRINCIPALE: dati Inertia.js ──────────────────────
-    const pageData = extractInertiaData(html);
+    try {
+        const pageData = extractInertiaData(html);
 
-    if (pageData?.props?.title) {
-        const t = pageData.props.title;
+        if (pageData?.props?.title) {
+            const t = pageData.props.title;
+            details.push({
+                description: t.plot || t.overview || "Nessuna descrizione.",
+                aliases:     (t.original_name && t.original_name !== t.name)
+                                 ? t.original_name : "N/A",
+                airdate:     t.release_date
+                                 ? t.release_date.substring(0, 4)
+                                 : (t.start_date || "N/A")
+            });
+        }
 
-        // "plot" nelle versioni recenti, "overview" nelle precedenti
-        const description = t.plot || t.overview || "Nessuna descrizione disponibile.";
+        // Fallback regex
+        if (details.length === 0) {
+            const desc = html.match(/<div[^>]*class="[^"]*overview[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+            const year = html.match(/<span[^>]*class="[^"]*year[^"]*"[^>]*>(\d{4})<\/span>/);
+            details.push({
+                description: desc ? decodeHTML(desc[1].replace(/<[^>]+>/g, "").trim()) : "N/A",
+                aliases: "N/A",
+                airdate: year ? year[1] : "N/A"
+            });
+        }
+    } catch (e) {}
 
-        // Il titolo originale (es. "The Dark Knight" invece di "Il Cavaliere Oscuro")
-        const aliases = t.original_name && t.original_name !== t.name
-            ? t.original_name
-            : "N/A";
-
-        // release_date ha formato ISO "YYYY-MM-DD" → prendiamo solo l'anno
-        const airdate = t.release_date
-            ? t.release_date.substring(0, 4)
-            : (t.start_date || "N/A");
-
-        details.push({ description, aliases, airdate });
-    }
-
-    // ── FALLBACK: parsing HTML ───────────────────────────────────
-    if (details.length === 0) {
-        const descMatch = html.match(
-            /<div[^>]*class="[^"]*overview[^"]*"[^>]*>([\s\S]*?)<\/div>/
-        );
-        const yearMatch = html.match(
-            /<span[^>]*class="[^"]*year[^"]*"[^>]*>(\d{4})<\/span>/
-        );
-
-        const description = descMatch
-            ? decodeHTML(descMatch[1].replace(/<[^>]+>/g, "").trim())
-            : "N/A";
-        const airdate = yearMatch ? yearMatch[1] : "N/A";
-
-        details.push({ description, aliases: "N/A", airdate });
-    }
-
-    return details;
+    return JSON.stringify(details);
 }
 
 
 // ================================================================
 //  FUNZIONE 3 — extractEpisodes(html)
-// ================================================================
-//  Per i FILM: restituisce un solo elemento (il film stesso).
-//  Per le SERIE: restituisce tutti gli episodi della stagione.
-//
-//  StreamingCommunity mostra una stagione alla volta.
-//  Sora chiama questa funzione per ogni stagione tramite href.
-//
-//  Output atteso: Array di oggetti { href, number }
+//  Nota: per le serie Inertia serve header X-Inertia.
+//  Con asyncJS:true facciamo una fetch con gli header corretti.
+//  Output: JSON.stringify([{href, number}])
 // ================================================================
 async function extractEpisodes(html) {
     const episodes = [];
 
-    // ── METODO PRINCIPALE: dati Inertia.js ──────────────────────
-    const pageData = extractInertiaData(html);
+    try {
+        const pageData = extractInertiaData(html);
 
-    if (pageData?.props) {
-        const props = pageData.props;
-        const title = props.title;
+        if (pageData?.props) {
+            const { title, loadedSeason, episodes: rawEps } = pageData.props;
 
-        // ── CASO FILM ────────────────────────────────────────────
-        // I film non hanno episodi: Sora ha bisogno comunque di
-        // un href per sapere dove trovare lo stream. Usiamo l'URL
-        // della pagina di visione con e=1 come episodio fittizio.
-        if (title?.type === "movie") {
-            episodes.push({
-                href:   `${BASE_URL}/watch/${title.id}?e=1`,
-                number: "1"
-            });
-            return episodes;
+            // Film: un solo "episodio" fittizio
+            if (title?.type === "movie") {
+                return JSON.stringify([{
+                    href:   `${BASE_URL}/watch/${title.id}?e=1`,
+                    number: "1"
+                }]);
+            }
+
+            // Serie: episodi della stagione corrente
+            const eps = loadedSeason?.episodes || rawEps || [];
+
+            // Se non ci sono episodi, prova a caricare la stagione via API Inertia
+            if (eps.length === 0 && title?.id && title?.slug) {
+                try {
+                    const versionMatch = html.match(/"version"\s*:\s*"([^"]+)"/);
+                    const version = versionMatch ? versionMatch[1] : "";
+                    const resp = await fetch(
+                        `${BASE_URL}/titles/${title.id}-${title.slug}/stagione-1`,
+                        {
+                            headers: {
+                                "X-Inertia": "true",
+                                "X-Inertia-Version": version,
+                                "Accept": "application/json"
+                            }
+                        }
+                    );
+                    const json = await resp.json();
+                    const apiEps = json?.props?.loadedSeason?.episodes || [];
+                    apiEps.forEach(ep => {
+                        episodes.push({
+                            href:   `${BASE_URL}/watch/${title.id}?e=${ep.id}`,
+                            number: String(ep.number || "0")
+                        });
+                    });
+                } catch (_) {}
+            } else {
+                eps.forEach(ep => {
+                    episodes.push({
+                        href:   `${BASE_URL}/watch/${title?.id}?e=${ep.id}`,
+                        number: String(ep.number || ep.episode_number || "0")
+                    });
+                });
+            }
         }
 
-        // ── CASO SERIE ───────────────────────────────────────────
-        // props.loadedSeason contiene la stagione correntemente visualizzata
-        // con il suo array di episodi
-        const eps = props.loadedSeason?.episodes
-                 || props.episodes
-                 || [];
-
-        eps.forEach(ep => {
-            const num  = String(ep.number || ep.episode_number || "0");
-            // URL di visione: /watch/{titleId}?e={episodeId}
-            // ep.id è l'ID univoco dell'episodio nel database del sito
-            const href = `${BASE_URL}/watch/${title?.id}?e=${ep.id}`;
-            episodes.push({ href, number: num });
-        });
-    }
-
-    // ── FALLBACK: regex sull'HTML ────────────────────────────────
-    if (episodes.length === 0) {
-        const epRegex =
-            /href="(\/watch\/[^"]+)"[^>]*>[\s\S]*?Episodio\s*(\d+)/g;
-        let m;
-        while ((m = epRegex.exec(html)) !== null) {
-            episodes.push({ href: BASE_URL + m[1], number: m[2] });
+        if (episodes.length === 0) {
+            const re = /href="(\/watch\/[^"]+)"[^>]*>[\s\S]*?Episodio\s*(\d+)/g;
+            let m;
+            while ((m = re.exec(html)) !== null)
+                episodes.push({ href: BASE_URL + m[1], number: m[2] });
         }
-    }
 
-    // Ordine crescente (ep. 1, 2, 3 ...)
-    episodes.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+        episodes.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+    } catch (e) {}
 
-    return episodes;
+    return JSON.stringify(episodes);
 }
 
 
 // ================================================================
 //  FUNZIONE 4 — extractStreamUrl(html)
-// ================================================================
-//  Chiamata sulla pagina /watch/{titleId}?e={episodeId}
-//  Deve restituire l'URL diretto del video (m3u8 HLS o mp4).
-//
-//  StreamingCommunity usa il player Vixcloud (vixcloud.co).
-//  La pagina /watch/ contiene un <iframe> che punta a Vixcloud.
-//  Vixcloud a sua volta espone un manifest .m3u8 via HLS.
-//
-//  Output atteso: Stringa URL
+//  Output: stringa URL (.m3u8 HLS o .mp4)
 // ================================================================
 async function extractStreamUrl(html) {
+    try {
+        const iframeMatch = html.match(/src="(https:\/\/vixcloud\.co\/embed\/[^"]+)"/);
 
-    // ── STEP 1: Cerca l'URL dell'iframe Vixcloud nella pagina ────
-    // Struttura HTML tipica:
-    //   <iframe src="https://vixcloud.co/embed/123?token=abc&..."></iframe>
-    const iframeMatch = html.match(
-        /src="(https:\/\/vixcloud\.co\/embed\/[^"]+)"/
-    );
-
-    if (iframeMatch) {
-        const embedUrl = iframeMatch[1];
-
-        // ── STEP 2 (asyncJS): Carica la pagina del player ────────
-        // Grazie ad asyncJS:true possiamo fare una fetch aggiuntiva.
-        // La pagina del player Vixcloud contiene il manifest .m3u8
-        // in una variabile JS: window.masterPlaylist = "https://..."
-        try {
-            const resp       = await fetch(embedUrl);
-            const playerHtml = await resp.text();
-
-            // Cerca il manifest HLS nella variabile JS del player
-            const m3u8Match = playerHtml.match(
-                /['"]?(https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/
-            );
-            if (m3u8Match) return m3u8Match[1];
-
-            // Fallback: cerca qualsiasi .m3u8 nella risposta
-            const genericM3u8 = playerHtml.match(/https?:\/\/[^\s"']+\.m3u8/);
-            if (genericM3u8) return genericM3u8[0];
-
-        } catch (fetchError) {
-            // fetch fallita (es. CORS) → restituiamo l'embed come fallback
-            // Sora potrebbe riuscire a gestirlo direttamente
-            return embedUrl;
+        if (iframeMatch) {
+            try {
+                const playerHtml = await (await fetch(iframeMatch[1])).text();
+                const m3u8 = playerHtml.match(/['"]?(https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/);
+                if (m3u8) return m3u8[1];
+            } catch (_) {
+                return iframeMatch[1];
+            }
         }
-    }
 
-    // ── FALLBACK A: .m3u8 diretto nella pagina ───────────────────
-    const hlsMatch = html.match(/['"]([^'"]+\.m3u8[^'"]*)['"]/);
-    if (hlsMatch) return hlsMatch[1];
+        const hls = html.match(/['"]([^'"]+\.m3u8[^'"]*)['"]/);
+        if (hls) return hls[1];
 
-    // ── FALLBACK B: file mp4 ─────────────────────────────────────
-    const mp4Match = html.match(/['"]([^'"]+\.mp4[^'"]*)['"]/);
-    if (mp4Match) return mp4Match[1];
-      
-    // Nessuno stream trovato
+        const mp4 = html.match(/['"]([^'"]+\.mp4[^'"]*)['"]/);
+        if (mp4) return mp4[1];
+    } catch (e) {}
+
     return null;
-}
