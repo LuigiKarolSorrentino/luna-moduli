@@ -1,0 +1,19 @@
+{
+  "sourceName": "StreamingCommunity",
+  "iconUrl": "https://streamingcommunity.pink/favicon.ico",
+  "author": {
+    "name": "Luigi",
+    "icon": "https://avatars.githubusercontent.com/u/0"
+  },
+  "version": "1.0.0",
+  "language": "Italiano",
+  "streamType": "HLS",
+  "quality": "1080p",
+  "baseUrl": "https://streamingcommunity.pink/",
+  "searchBaseUrl": "https://streamingcommunity.pink/search?q=%s",
+  "scriptUrl": "https://raw.githubusercontent.com/LuigiKarolSorrentino/luna-moduli/StreamingCommunity/StreamingCommunity.js",
+  "asyncJS": true,
+  "streamAsyncJS": true,
+  "softsub": false,
+  "category": "movie"
+}
