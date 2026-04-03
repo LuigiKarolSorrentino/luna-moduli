@@ -25,8 +25,8 @@
 
 
 // ── COSTANTI ────────────────────────────────────────────────────
-const BASE_URL = "https://streamingcommunity.foo"; // ← aggiorna qui
-const CDN_URL  = "https://cdn.streamingcommunity.foo/images";
+const BASE_URL = "https://streamingcommunity.pink"; // ← aggiorna qui
+const CDN_URL  = "https://cdn.streamingcommunity.pink/images";
 
 
 // ── UTILITÀ INTERNE ─────────────────────────────────────────────
