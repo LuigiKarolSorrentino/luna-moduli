@@ -11,7 +11,7 @@
   "quality": "1080p",
   "baseUrl": "https://streamingcommunityz.pink/",
   "searchBaseUrl": "https://streamingcommunityz.pink/api/search?q=%s",
-  "scriptUrl": "https://cdn.jsdelivr.net/gh/LuigiKarolSorrentino/luna-moduli@main/StreamingCommunity/StreamingCommunity.js",
+  "scriptUrl": "https://raw.githubusercontent.com/LuigiKarolSorrentino/luna-moduli/main/StreamingCommunity/StreamingCommunity.js",
   "asyncJS": true,
   "streamAsyncJS": true,
   "softsub": false,
