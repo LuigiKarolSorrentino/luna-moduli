@@ -157,7 +157,7 @@ async function searchResults(html) {
         }
     }
 
-    return results;
+    return JSON.stringify(results); // ← prima era solo: return results;
 }
 
 
