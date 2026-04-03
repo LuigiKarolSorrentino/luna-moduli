@@ -63,11 +63,17 @@ async function searchResults(html) {
     const results = [];
 
     try {
-        // "html" è in realtà JSON text perché puntiamo all'API
         const data = JSON.parse(html);
 
-        // La risposta può avere i titoli in data.data o direttamente in data
-        const titles = data.data || data.titles || data || [];
+        // DEBUG: logga la struttura raw della risposta API
+        console.log("[SC DEBUG] Raw API response:", JSON.stringify(data).substring(0, 500));
+        console.log("[SC DEBUG] Keys:", Object.keys(data));
+
+        const titles = data.data || data.titles || data.results || data || [];
+        console.log("[SC DEBUG] Titles array length:", Array.isArray(titles) ? titles.length : "NOT AN ARRAY");
+        if (Array.isArray(titles) && titles.length > 0) {
+            console.log("[SC DEBUG] First title keys:", Object.keys(titles[0]));
+        }
 
         (Array.isArray(titles) ? titles : []).forEach(t => {
             if (!t.name || !t.id) return;
@@ -79,24 +85,7 @@ async function searchResults(html) {
         });
 
     } catch (e) {
-        // Se non è JSON (es. ritorna HTML) proviamo il parsing Inertia
-        try {
-            const pageData = extractInertiaData(html);
-            if (pageData?.props?.titles) {
-                const arr = Array.isArray(pageData.props.titles)
-                    ? pageData.props.titles
-                    : (pageData.props.titles.data || []);
-
-                arr.forEach(t => {
-                    if (!t.name || !t.id) return;
-                    results.push({
-                        title: t.name,
-                        image: buildPosterUrl(t.images),
-                        href:  `${BASE_URL}/titles/${t.id}-${t.slug || ""}`
-                    });
-                });
-            }
-        } catch (_) {}
+        console.log("[SC DEBUG] JSON parse failed, raw html:", html.substring(0, 300));
     }
 
     return JSON.stringify(results);
